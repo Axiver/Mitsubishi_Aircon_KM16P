@@ -1,42 +1,55 @@
 """
-  Generates IR frames to be transmitted to the AC unit
+Generates IR frames to be transmitted to the AC unit
 """
+
 import argparse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List
 
-from libs.utils import TOTAL_BITS, bits_to_bytes, encode_lsb_first, set_bits, update_checksum
+from libs.utils import (
+    TOTAL_BITS,
+    bits_to_bytes,
+    encode_lsb_first,
+    set_bits,
+    update_checksum,
+)
+
 
 # Classes
 @dataclass(frozen=True)
 class ConfigData:
-	start_pos: int
-	end_pos: int
+    start_pos: int
+    end_pos: int
+
 
 """
   Script Arguments
 """
 script_args = {
-  # "decode": {
-  #   "description": "Decode a parsed bitstream",
-  #   "arguments": [
-  #     {"name": "input", "type": Path, "help": "Path to ir_parsed file"},
-  #     {"name": "--bytes", "action": "store_true", "help": "Print byte dump"},
-  #   ],
-  # },
-  "encode": {
-    "description": "Encode a new bitstream",
-    "arguments": [
-      # {"name": "--base", "type": Path, "help": "Base ir_parsed file override"},
-      {"name": "--output", "type": Path, "help": "Output path (ir_parsed format)"},
-      {"name": "--power", "choices": ["on", "off"], "help": "Power setting"},
-      {"name": "--temp", "type": int, "help": "Temperature in Celsius"},
-      {"name": "--fan", "type": int, "help": "Fan setting (0-3)"},
-      {"name": "--swing", "type": int, "help": "Swing setting (0-4)"},
-      {"name": "--bytes", "action": "store_true", "help": "Print byte dump"},
-    ],
-  },
+    # "decode": {
+    #   "description": "Decode a parsed bitstream",
+    #   "arguments": [
+    #     {"name": "input", "type": Path, "help": "Path to ir_parsed file"},
+    #     {"name": "--bytes", "action": "store_true", "help": "Print byte dump"},
+    #   ],
+    # },
+    "encode": {
+        "description": "Encode a new bitstream",
+        "arguments": [
+            # {"name": "--base", "type": Path, "help": "Base ir_parsed file override"},
+            {"name": "--power", "choices": ["on", "off"], "help": "Power setting"},
+            {"name": "--temp", "type": int, "help": "Temperature in Celsius"},
+            {"name": "--fan", "type": int, "help": "Fan setting (0-3)"},
+            {"name": "--swing", "type": int, "help": "Swing setting (0-4)"},
+            {"name": "--debug", "action": "store_true", "help": "Print bitstream dump"},
+            {
+                "name": "--output",
+                "type": Path,
+                "help": "Output path (ir_parsed format)",
+            },
+        ],
+    },
 }
 
 """
@@ -45,11 +58,13 @@ script_args = {
 # The sizes of the data segments vary, and may not necessarily have a even number of bits
 # They're not grouped into bytes either, so the bit positions are purely arbitrary and based on the observed structure of the IR signal
 # Bit positions (0-based) in the raw parsed bitstring
-POWER_DATA: ConfigData = ConfigData(start_pos=43, end_pos=43) # Typically 1 bit (0 for off, 1 for on)
-TEMP_DATA: ConfigData = ConfigData(start_pos=54, end_pos=57) # Typically 4 bits
-FAN_DATA: ConfigData = ConfigData(start_pos=70, end_pos=72) # Typically 3 bits
-SWING_DATA: ConfigData = ConfigData(start_pos=73, end_pos=76) # Typically 4 bits
-CHECKSUM_DATA: ConfigData = ConfigData(start_pos=134, end_pos=142) # Typically 8 bits
+POWER_DATA: ConfigData = ConfigData(
+    start_pos=43, end_pos=43
+)  # Typically 1 bit (0 for off, 1 for on)
+TEMP_DATA: ConfigData = ConfigData(start_pos=54, end_pos=57)  # Typically 4 bits
+FAN_DATA: ConfigData = ConfigData(start_pos=70, end_pos=72)  # Typically 3 bits
+SWING_DATA: ConfigData = ConfigData(start_pos=73, end_pos=76)  # Typically 4 bits
+CHECKSUM_DATA: ConfigData = ConfigData(start_pos=134, end_pos=142)  # Typically 8 bits
 
 """
   Settings (The actual values to be transmitted for each setting)
@@ -57,26 +72,26 @@ CHECKSUM_DATA: ConfigData = ConfigData(start_pos=134, end_pos=142) # Typically 8
 """
 # (Unused for now but might be helpful in the future)
 FILL_DATA = {
-  "header": 0b000100110100110110010010000000000000000000, # Pos 0-43
-  "header2": 0b0000011000 # Pos 45-54
+    "header": 0b000100110100110110010010000000000000000000,  # Pos 0-43
+    "header2": 0b0000011000,  # Pos 45-54
 }
 
 # Bits representing each fan setting
 FAN_SETTING_TO_CODE = {
-  0: 1,  # fan0 -> bits 100 (LSB-first value 1) (Low)
-  1: 2,  # fan1 -> bits 010 (LSB-first value 2) (Medium)
-  2: 3,  # fan2 -> bits 110 (LSB-first value 3) (High)
-  3: 4,  # fan3 -> bits 001 (LSB-first value 4) (Turbo)
+    0: 1,  # fan0 -> bits 100 (LSB-first value 1) (Low)
+    1: 2,  # fan1 -> bits 010 (LSB-first value 2) (Medium)
+    2: 3,  # fan2 -> bits 110 (LSB-first value 3) (High)
+    3: 4,  # fan3 -> bits 001 (LSB-first value 4) (Turbo)
 }
 
 # Bits representing each swing setting
 SWING_SETTING_TO_CODE = {
-  0: 9,   # swing0 -> bits 1001 (LSB-first value 9) (Highest)
-  1: 10,  # swing1 -> bits 0101 (LSB-first value 10) (High)
-  2: 11,  # swing2 -> bits 1101 (LSB-first value 11) (Medium)
-  3: 12,  # swing3 -> bits 0011 (LSB-first value 12) (Low)
-  4: 13,  # swing4 -> bits 1011 (LSB-first value 13) (Lowest)
-  "auto": 15, # swing auto -> bits 1111 (LSB-first value 15) (Auto)
+    0: 9,  # swing0 -> bits 1001 (LSB-first value 9) (Highest)
+    1: 10,  # swing1 -> bits 0101 (LSB-first value 10) (High)
+    2: 11,  # swing2 -> bits 1101 (LSB-first value 11) (Medium)
+    3: 12,  # swing3 -> bits 0011 (LSB-first value 12) (Low)
+    4: 13,  # swing4 -> bits 1011 (LSB-first value 13) (Lowest)
+    "auto": 15,  # swing auto -> bits 1111 (LSB-first value 15) (Auto)
 }
 
 
@@ -85,40 +100,49 @@ SWING_SETTING_TO_CODE = {
 """
 BASE_PAYLOAD = 0b00010011010011011001001000000000000000000001000001100000010000011011001001001001100110000000000000000000000000000000000000000000000000010111001
 
+
 # Obtain the binary representation of the temperature setting, which is a 4-bit value representing the temperature in Celsius from 16 degrees (since the AC unit's temperature range starts at 16 degrees)
 # Returns the result in little-endian format
 def encode_temp_setting(temp_celsius: int) -> int:
-  # Restrict the temperature to a valid range
-  if temp_celsius < 16 or temp_celsius > 30:
-    raise ValueError("Temperature must be between 16 and 30 degrees Celsius")
-  result = bin(temp_celsius - 16)[2:].zfill(4)  # Remove '0b' prefix and zero-pad to 4 bits
+    # Restrict the temperature to a valid range
+    if temp_celsius < 16 or temp_celsius > 30:
+        raise ValueError("Temperature must be between 16 and 30 degrees Celsius")
+    result = bin(temp_celsius - 16)[2:].zfill(
+        4
+    )  # Remove '0b' prefix and zero-pad to 4 bits
 
-  # Flip the bits to convert to little-endian format
-  flipped = result[::-1]
-  return flipped
+    # Flip the bits to convert to little-endian format
+    flipped = result[::-1]
+    return flipped
+
 
 """
   Args parser
 """
+
+
 def parse_args() -> argparse.Namespace:
-  # Create the main argument parser and a subparser for the different commands (encode and decode)
-  parser = argparse.ArgumentParser(description="KM16P IR protocol helper")
-  sub = parser.add_subparsers(dest="command", required=True)
+    # Create the main argument parser and a subparser for the different commands (encode and decode)
+    parser = argparse.ArgumentParser(description="KM16P IR protocol helper")
+    sub = parser.add_subparsers(dest="command", required=True)
 
-  # Iterate through the defined script arguments and add them to the parser
-  for command, config in script_args.items():
-    cmd_parser = sub.add_parser(command, help=config["description"])
+    # Iterate through the defined script arguments and add them to the parser
+    for command, config in script_args.items():
+        cmd_parser = sub.add_parser(command, help=config["description"])
 
-    # Bind the arguments for the current command to the parser
-    for arg in config["arguments"]:
-      arg_name = arg.pop("name")
-      cmd_parser.add_argument(arg_name, **arg)
+        # Bind the arguments for the current command to the parser
+        for arg in config["arguments"]:
+            arg_name = arg.pop("name")
+            cmd_parser.add_argument(arg_name, **arg)
 
-  return parser.parse_args()
+    return parser.parse_args()
+
 
 """
   Writes the encoded bitstring to a file in the ir_parsed format, which consists of lines of 6 bytes (48 bits) each, with spaces between the bytes
 """
+
+
 def write_bitstring(path: Path, bitstring: str) -> None:
     lines: List[str] = []
     for i in range(0, len(bitstring), 6):
@@ -137,6 +161,7 @@ def resolve_swing_code(swing_setting: int) -> int:
         return SWING_SETTING_TO_CODE[swing_setting]
     raise ValueError("Swing setting must be 0-4")
 
+
 def encode_frame(
     base_bitstring: str,
     power: bool | None = None,
@@ -151,52 +176,58 @@ def encode_frame(
         if temp_c < 16 or temp_c > 30:
             raise ValueError("Temperature must be between 16 and 30")
         temp_bits = encode_lsb_first(temp_c - 16, 4)
-        bits = set_bits(bits, range(TEMP_DATA.start_pos, TEMP_DATA.end_pos + 1), temp_bits)
+        bits = set_bits(
+            bits, range(TEMP_DATA.start_pos, TEMP_DATA.end_pos + 1), temp_bits
+        )
     if fan is not None:
         fan_bits = encode_lsb_first(resolve_fan_code(fan), 3)
         bits = set_bits(bits, range(FAN_DATA.start_pos, FAN_DATA.end_pos + 1), fan_bits)
     if swing is not None:
         swing_bits = encode_lsb_first(resolve_swing_code(swing), 4)
-        bits = set_bits(bits, range(SWING_DATA.start_pos, SWING_DATA.end_pos + 1), swing_bits)
+        bits = set_bits(
+            bits, range(SWING_DATA.start_pos, SWING_DATA.end_pos + 1), swing_bits
+        )
 
     return update_checksum(bits)
 
+
 # Main function
 def main() -> int:
-  args = parse_args()
-  
-  # Default power setting to "on"
-  power = None if args.power is None else args.power == "on"
+    args = parse_args()
 
-  # Use the base payload as the starting point for encoding, which represents a typical frame with default settings (24C, Swing 0, Fan 0, On)
-  base_bits = bin(BASE_PAYLOAD)[2:].zfill(TOTAL_BITS)  # Convert the base payload to a binary string. Also removing the '0b' prefix and the header bits
+    # Default power setting to "on"
+    power = None if args.power is None else args.power == "on"
 
-  # Check that it has the expected length of bits
-  if len(base_bits) != TOTAL_BITS:
-      raise ValueError(f"Base payload must be {TOTAL_BITS} bits long")
+    # Use the base payload as the starting point for encoding, which represents a typical frame with default settings (24C, Swing 0, Fan 0, On)
+    base_bits = bin(BASE_PAYLOAD)[2:].zfill(
+        TOTAL_BITS
+    )  # Convert the base payload to a binary string. Also removing the '0b' prefix and the header bits
 
-  bitstring = encode_frame(
-    base_bits,
-    power=power,
-    temp_c=args.temp,
-    fan=args.fan,
-    swing=args.swing,
-  )
+    # Check that it has the expected length of bits
+    if len(base_bits) != TOTAL_BITS:
+        raise ValueError(f"Base payload must be {TOTAL_BITS} bits long")
 
-  # If an output path is provided, write the encoded bitstring to a file in the ir_parsed format; otherwise, print the bitstring to the console
-  if args.output:
-      write_bitstring(args.output, bitstring)
-  else:
-      print(bitstring)
+    bitstring = encode_frame(
+        base_bits,
+        power=power,
+        temp_c=args.temp,
+        fan=args.fan,
+        swing=args.swing,
+    )
 
-  if args.bytes:
-      bytes_all = bits_to_bytes(bitstring)
-      print("bytes:", " ".join(f"{b:02X}" for b in bytes_all))
+    # If an output path is provided, write the encoded bitstring to a file in the ir_parsed format
+    if args.output:
+        write_bitstring(args.output, bitstring)
+    # If debug flag is set, print the bitstring to the console
+    if args.debug:
+        print(bitstring)
 
-  return 0
+    if args.bytes:
+        bytes_all = bits_to_bytes(bitstring)
+        print("bytes:", " ".join(f"{b:02X}" for b in bytes_all))
+
+    return 0
 
 
 if __name__ == "__main__":
-  raise SystemExit(main())
-
-
+    raise SystemExit(main())
