@@ -61,6 +61,8 @@ Run the parser to regenerate [ir_parsed/](ir_parsed/) from [ir_dumps/](ir_dumps/
 py scripts/parse.py
 ```
 
+Converts raw timing dumps into bits, applying a fixed threshold to distinguish 0/1 bits.
+
 ### Encode a new frame
 
 By default, encoding uses the 24C_swing0_fan0 payload as the base. To create a new frame with specific settings, run:
@@ -71,12 +73,29 @@ py scripts/control.py encode \
 	--fan 2 \
 	--swing 3 \
 	--power on \
-	--output ir_parsed/custom_25C_swing3_fan2 \
+	--output ./bitstream_file \
 	--bytes
 ```
 
+This creates a new frame with the specified temperature, fan, swing, and power settings, while preserving other bits from the base frame. The checksum and fixed tail bit are automatically updated.
+Note that the output is not transmissible as-is; it is a bitstream file that can be converted to ir-ctl timings with the next step.
+
 If you are working with a specific mode (auto, eco, dehumidifying, fan, smartset, timer), start from a base frame that already matches that mode to preserve mode-specific bits.
 (This may be added in the future, but for now you can manually copy a base frame from [ir_parsed/](ir_parsed/) that matches your desired mode and modify it with the encoder.)
+
+### Transmit with ir-ctl
+
+#### Bitstream to ir-ctl timings
+To convert a bitstream file into ir-ctl timings for transmission, run:
+
+```py scripts/encode_irctl.py \
+	--input ./bitstream_file \
+	--output ./ir_ctl_timings
+```
+
+The IR frame can then be transmitted using ir-ctl with the generated timings file.
+
+`ir-ctl -d /dev/lirc0 --send=./ir_ctl_timings --carrier=38000` (at 38kHz carrier frequency)
 
 ## Notes and limitations
 
