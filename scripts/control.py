@@ -222,9 +222,9 @@ def main() -> int:
     if args.debug:
         print(bitstring)
 
-    if args.bytes:
-        bytes_all = bits_to_bytes(bitstring)
-        print("bytes:", " ".join(f"{b:02X}" for b in bytes_all))
+    # if args.bytes:
+    #     bytes_all = bits_to_bytes(bitstring)
+    #     print("bytes:", " ".join(f"{b:02X}" for b in bytes_all))
 
     return 0
 
