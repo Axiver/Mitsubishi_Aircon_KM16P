@@ -11,6 +11,7 @@ import sys
 DUMPS_DIR = Path(__file__).resolve().parent.parent / "ir_dumps"
 PARSED_DIR = Path(__file__).resolve().parent.parent / "ir_parsed"
 BIT_THRESHOLD = 800
+
 TRIM_BITS = 0
 PARSE_RAW = True
 

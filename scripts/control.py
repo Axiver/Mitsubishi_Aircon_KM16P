@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List
 
-from libs.utils import FIXED_TAIL_BIT, OFFSET_BITS, TOTAL_BITS, encode_frame
+from libs.utils import TOTAL_BITS, bits_to_bytes, encode_lsb_first, set_bits, update_checksum
 
 # Classes
 @dataclass(frozen=True)
@@ -44,36 +44,39 @@ script_args = {
 """
 # The sizes of the data segments vary, and may not necessarily have a even number of bits
 # They're not grouped into bytes either, so the bit positions are purely arbitrary and based on the observed structure of the IR signal
-ON_OFF_DATA: ConfigData = ConfigData(start_pos=44, end_pos=44) # Typically 1 bit (0 for off, 1 for on)
-TEMP_DATA: ConfigData = ConfigData(start_pos=55, end_pos=58) # Typically 4 bits
-FAN_DATA: ConfigData = ConfigData(start_pos=71, end_pos=73) # Typically 3 bits
-SWING_DATA: ConfigData = ConfigData(start_pos=74, end_pos=77) # Typically 4 bits
-ZERO_FILL_DATA: ConfigData = ConfigData(start_pos=106, end_pos=134) # Seems to have a fixed sequence of 29 bits that are always "0"
-CHECKSUM_DATA: ConfigData = ConfigData(start_pos=135, end_pos=143) # Typically 8 bits
+# Bit positions (0-based) in the raw parsed bitstring
+POWER_DATA: ConfigData = ConfigData(start_pos=43, end_pos=43) # Typically 1 bit (0 for off, 1 for on)
+TEMP_DATA: ConfigData = ConfigData(start_pos=54, end_pos=57) # Typically 4 bits
+FAN_DATA: ConfigData = ConfigData(start_pos=70, end_pos=72) # Typically 3 bits
+SWING_DATA: ConfigData = ConfigData(start_pos=73, end_pos=76) # Typically 4 bits
+CHECKSUM_DATA: ConfigData = ConfigData(start_pos=134, end_pos=142) # Typically 8 bits
 
 """
   Settings (The actual values to be transmitted for each setting)
   The binary values are small-endian because the AC unit seems to read the bits in reverse order (seems to be a common convention in IR signals)
 """
+# (Unused for now but might be helpful in the future)
 FILL_DATA = {
   "header": 0b000100110100110110010010000000000000000000, # Pos 0-43
   "header2": 0b0000011000 # Pos 45-54
 }
 
-FAN_SETTINGS = {
-  "auto": 0b000,
-  "low": 0b100,
-  "medium": 0b010,
-  "high": 0b0110,
-  "turbo": 0b001
+# Bits representing each fan setting
+FAN_SETTING_TO_CODE = {
+  0: 1,  # fan0 -> bits 100 (LSB-first value 1) (Low)
+  1: 2,  # fan1 -> bits 010 (LSB-first value 2) (Medium)
+  2: 3,  # fan2 -> bits 110 (LSB-first value 3) (High)
+  3: 4,  # fan3 -> bits 001 (LSB-first value 4) (Turbo)
 }
 
-SWING_SETTINGS = {
-  "highest": 0b1001,
-  "high": 0b0101,
-  "medium": 0b1101,
-  "low": 0b0011,
-  "lowest": 0b1011,
+# Bits representing each swing setting
+SWING_SETTING_TO_CODE = {
+  0: 9,   # swing0 -> bits 1001 (LSB-first value 9) (Highest)
+  1: 10,  # swing1 -> bits 0101 (LSB-first value 10) (High)
+  2: 11,  # swing2 -> bits 1101 (LSB-first value 11) (Medium)
+  3: 12,  # swing3 -> bits 0011 (LSB-first value 12) (Low)
+  4: 13,  # swing4 -> bits 1011 (LSB-first value 13) (Lowest)
+  "auto": 15, # swing auto -> bits 1111 (LSB-first value 15) (Auto)
 }
 
 
@@ -123,24 +126,40 @@ def write_bitstring(path: Path, bitstring: str) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-"""
-  Converts a bitstring into a list of bytes, taking into account the offset for the data and ensuring that the bits are grouped correctly into bytes (8 bits each), with the least significant bit first within each byte
-"""
-def bits_to_bytes(bitstring: str, offset: int = OFFSET_BITS) -> List[int]:
-    bits = bitstring[offset:]
-    if len(bits) % 8 != 0:
-        # Allow trailing fixed tail bit, which is not part of any byte.
-        if bits[-1:] == str(FIXED_TAIL_BIT) and (len(bits) - 1) % 8 == 0:
-            bits = bits[:-1]
-        else:
-            raise ValueError("Bit length after offset is not byte-aligned")
-    bytes_out: List[int] = []
-    for i in range(0, len(bits), 8):
-        chunk = bits[i : i + 8]
-        chunk = chunk[::-1]  # LSB-first within each byte
-        bytes_out.append(int(chunk, 2))
-    return bytes_out
+def resolve_fan_code(fan_setting: int) -> int:
+    if fan_setting in FAN_SETTING_TO_CODE:
+        return FAN_SETTING_TO_CODE[fan_setting]
+    raise ValueError("Fan setting must be 0-3")
 
+
+def resolve_swing_code(swing_setting: int) -> int:
+    if swing_setting in SWING_SETTING_TO_CODE:
+        return SWING_SETTING_TO_CODE[swing_setting]
+    raise ValueError("Swing setting must be 0-4")
+
+def encode_frame(
+    base_bitstring: str,
+    power: bool | None = None,
+    temp_c: int | None = None,
+    fan: int | None = None,
+    swing: int | None = None,
+) -> str:
+    bits = base_bitstring
+    if power is not None:
+        bits = set_bits(bits, [POWER_DATA], "1" if power else "0")
+    if temp_c is not None:
+        if temp_c < 16 or temp_c > 30:
+            raise ValueError("Temperature must be between 16 and 30")
+        temp_bits = encode_lsb_first(temp_c - 16, 4)
+        bits = set_bits(bits, range(TEMP_DATA.start_pos, TEMP_DATA.end_pos + 1), temp_bits)
+    if fan is not None:
+        fan_bits = encode_lsb_first(resolve_fan_code(fan), 3)
+        bits = set_bits(bits, range(FAN_DATA.start_pos, FAN_DATA.end_pos + 1), fan_bits)
+    if swing is not None:
+        swing_bits = encode_lsb_first(resolve_swing_code(swing), 4)
+        bits = set_bits(bits, range(SWING_DATA.start_pos, SWING_DATA.end_pos + 1), swing_bits)
+
+    return update_checksum(bits)
 
 # Main function
 def main() -> int:
@@ -150,7 +169,12 @@ def main() -> int:
   power = None if args.power is None else args.power == "on"
 
   # Use the base payload as the starting point for encoding, which represents a typical frame with default settings (24C, Swing 0, Fan 0, On)
-  base_bits = bin(BASE_PAYLOAD)[2:].zfill(TOTAL_BITS)  # Convert the base payload to a binary string, removing the '0b' prefix and zero-padding to ensure it has the correct total number of bits
+  base_bits = bin(BASE_PAYLOAD)[2:].zfill(TOTAL_BITS)  # Convert the base payload to a binary string. Also removing the '0b' prefix and the header bits
+
+  # Check that it has the expected length of bits
+  if len(base_bits) != TOTAL_BITS:
+      raise ValueError(f"Base payload must be {TOTAL_BITS} bits long")
+
   bitstring = encode_frame(
     base_bits,
     power=power,
@@ -174,7 +198,5 @@ def main() -> int:
 
 if __name__ == "__main__":
   raise SystemExit(main())
-
-print(encode_temp_setting(23))
 
 
