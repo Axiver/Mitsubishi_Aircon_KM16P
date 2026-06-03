@@ -4,16 +4,17 @@ Generates IR frames to be transmitted to the AC unit
 
 import argparse
 from dataclasses import dataclass
+import os
 from pathlib import Path
 from typing import List
 
 from libs.utils import (
     TOTAL_BITS,
-    bits_to_bytes,
     encode_lsb_first,
     set_bits,
     update_checksum,
 )
+from encode_irctl import build_timings, write_irctl
 
 
 # Classes
@@ -41,7 +42,7 @@ script_args = {
             {"name": "--power", "choices": ["on", "off"], "help": "Power setting"},
             {"name": "--temp", "type": int, "help": "Temperature in Celsius"},
             {"name": "--fan", "type": int, "help": "Fan setting (0-3)"},
-            {"name": "--swing", "type": int, "help": "Swing setting (0-4)"},
+            {"name": "--swing", "type": int, "help": "Swing setting (0-5)"},
             {"name": "--debug", "action": "store_true", "help": "Print bitstream dump"},
             {
                 "name": "--output",
@@ -91,7 +92,7 @@ SWING_SETTING_TO_CODE = {
     2: 11,  # swing2 -> bits 1101 (LSB-first value 11) (Medium)
     3: 12,  # swing3 -> bits 0011 (LSB-first value 12) (Low)
     4: 13,  # swing4 -> bits 1011 (LSB-first value 13) (Lowest)
-    "auto": 15,  # swing auto -> bits 1111 (LSB-first value 15) (Auto)
+    5: 15,  # swing auto -> bits 1111 (LSB-first value 15) (Auto)
 }
 
 
@@ -159,7 +160,7 @@ def resolve_fan_code(fan_setting: int) -> int:
 def resolve_swing_code(swing_setting: int) -> int:
     if swing_setting in SWING_SETTING_TO_CODE:
         return SWING_SETTING_TO_CODE[swing_setting]
-    raise ValueError("Swing setting must be 0-4")
+    raise ValueError("Swing setting must be 0-5, where 5 is auto")
 
 
 def encode_frame(
@@ -191,6 +192,22 @@ def encode_frame(
     return update_checksum(bits)
 
 
+def send_ir_frame(bitstring: str) -> None:
+    # Convert the bitstring into ir-ctl timings
+    timings = build_timings(bitstring)
+
+    # Save to a temp file
+    write_irctl(Path("./temp_timings"), timings)
+
+    # Send the IR frame
+    os.system("ir-ctl -d /dev/lirc0 --send=./temp_timings --carrier=38000")
+
+    # Delete the temp file
+    os.remove("./temp_timings")
+
+    return
+
+
 # Main function
 def main() -> int:
     args = parse_args()
@@ -218,6 +235,7 @@ def main() -> int:
     # If an output path is provided, write the encoded bitstring to a file in the ir_parsed format
     if args.output:
         write_bitstring(args.output, bitstring)
+
     # If debug flag is set, print the bitstring to the console
     if args.debug:
         print(bitstring)
@@ -225,6 +243,9 @@ def main() -> int:
     # if args.bytes:
     #     bytes_all = bits_to_bytes(bitstring)
     #     print("bytes:", " ".join(f"{b:02X}" for b in bytes_all))
+
+    # Send the IR frame using the generated bitstring
+    send_ir_frame(bitstring)
 
     return 0
 
