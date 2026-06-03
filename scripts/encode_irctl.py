@@ -6,17 +6,19 @@ from pathlib import Path
     Define Header Data
 """
 # Observed timings in microseconds from the captured dumps.
-HEADER_PULSE = 3500 # Initial long pulse to indicate the start of a frame
-HEADER_SPACE = 1650 # Long space after the initial pulse
-BIT_PULSE = 440 # Standard pulse duration for every bit
-BIT_SPACE_0 = 430 # Space duration for a "0" bit
-BIT_SPACE_1 = 1280 # Space duration for a "1" bit
-FRAME_GAP = 17000 # Gap at the end of the frame before the next one starts
+HEADER_PULSE = 3500  # Initial long pulse to indicate the start of a frame
+HEADER_SPACE = 1650  # Long space after the initial pulse
+BIT_PULSE = 440  # Standard pulse duration for every bit
+BIT_SPACE_0 = 430  # Space duration for a "0" bit
+BIT_SPACE_1 = 1280  # Space duration for a "1" bit
+FRAME_GAP = 17000  # Gap at the end of the frame before the next one starts
 
 
 """
     Functions
 """
+
+
 # Reads the input file and extracts a continuous string of bits (0s and 1s) from it, ignoring any other characters or formatting
 def read_bits(path: Path) -> str:
     text = path.read_text(encoding="utf-8")
@@ -29,12 +31,12 @@ def read_bits(path: Path) -> str:
 def build_timings(bitstring: str) -> list[tuple[str, int]]:
     # Initialise a list of timings
     timings: list[tuple[str, int]] = []
-    
+
     # Construct the header timings (first 3 bits)
     timings.append(("pulse", HEADER_PULSE))
     timings.append(("space", HEADER_SPACE))
     timings.append(("pulse", BIT_PULSE))
-    timings.append(("space", BIT_SPACE_0))
+    timings.append(("space", BIT_SPACE_1))
     timings.append(("pulse", BIT_PULSE))
     timings.append(("space", BIT_SPACE_1))
 
@@ -49,6 +51,7 @@ def build_timings(bitstring: str) -> list[tuple[str, int]]:
     # Append the final gap timing at the end of the frame
     timings.append(("space", FRAME_GAP))
     return timings
+
 
 # Writes the generated timings to a file in the format expected by ir-ctl
 def write_irctl(path: Path, timings: list[tuple[str, int]]) -> None:
