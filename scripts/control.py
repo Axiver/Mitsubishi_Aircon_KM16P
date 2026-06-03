@@ -27,6 +27,14 @@ class ConfigData:
 """
   Script Arguments
 """
+common_args = [
+    # {"name": "--base", "type": Path, "help": "Base ir_parsed file override"},
+    {"name": "--power", "choices": ["on", "off"], "help": "Power setting"},
+    {"name": "--temp", "type": int, "help": "Temperature in Celsius"},
+    {"name": "--fan", "type": int, "help": "Fan setting (0-3)"},
+    {"name": "--swing", "type": int, "help": "Swing setting (0-5)"},
+]
+
 script_args = {
     # "decode": {
     #   "description": "Decode a parsed bitstream",
@@ -35,14 +43,13 @@ script_args = {
     #     {"name": "--bytes", "action": "store_true", "help": "Print byte dump"},
     #   ],
     # },
+    "transmit": {
+        "description": "Transmit an IR Frame with the specified settings (Control your AC!)",
+        "arguments": [arg.copy() for arg in common_args],
+    },
     "encode": {
-        "description": "Encode a new bitstream",
-        "arguments": [
-            # {"name": "--base", "type": Path, "help": "Base ir_parsed file override"},
-            {"name": "--power", "choices": ["on", "off"], "help": "Power setting"},
-            {"name": "--temp", "type": int, "help": "Temperature in Celsius"},
-            {"name": "--fan", "type": int, "help": "Fan setting (0-3)"},
-            {"name": "--swing", "type": int, "help": "Swing setting (0-5)"},
+        "description": "Encode a new KM16P IR Frame",
+        "arguments": [* [arg.copy() for arg in common_args],
             {"name": "--debug", "action": "store_true", "help": "Print bitstream dump"},
             {
                 "name": "--output",
@@ -233,19 +240,21 @@ def main() -> int:
     )
 
     # If an output path is provided, write the encoded bitstring to a file in the ir_parsed format
-    if args.output:
-        write_bitstring(args.output, bitstring)
+    if args.command == "encode":
+        if args.output:
+            write_bitstring(args.output, bitstring)
 
-    # If debug flag is set, print the bitstring to the console
-    if args.debug:
-        print(bitstring)
+        # If debug flag is set, print the bitstring to the console
+        if args.debug:
+            print(bitstring)
 
-    # if args.bytes:
-    #     bytes_all = bits_to_bytes(bitstring)
-    #     print("bytes:", " ".join(f"{b:02X}" for b in bytes_all))
+        # if args.bytes:
+        #     bytes_all = bits_to_bytes(bitstring)
+        #     print("bytes:", " ".join(f"{b:02X}" for b in bytes_all))
 
-    # Send the IR frame using the generated bitstring
-    send_ir_frame(bitstring)
+    # Send the IR frame using the generated bitstring if the transmit command is used
+    if args.command == "transmit":
+        send_ir_frame(bitstring)
 
     return 0
 

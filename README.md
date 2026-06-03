@@ -1,6 +1,6 @@
 # Mitsubishi_Aircon_KM16P
 
-Reverse engineering the KM16P remote for Mitsubishi air conditioners. This project collects raw IR dumps, parses them into bitstreams, and documents the protocol structure (including checksum behavior). It also provides a small encoder/decoder utility for working with the parsed frames.
+Reverse engineering the KM16P remote for Mitsubishi air conditioners. This project collects raw IR dumps, parses them into bitstreams, and documents the protocol structure (including checksum behavior). It also provides small encoder/decoder/transmit utilities for working with the parsed frames.
 
 ## Repository layout
 
@@ -74,7 +74,7 @@ py scripts/control.py encode \
 	--swing 3 \
 	--power on \
 	--output ./bitstream_file \
-	--bytes
+	--debug
 ```
 
 This creates a new frame with the specified temperature, fan, swing, and power settings, while preserving other bits from the base frame. The checksum and fixed tail bit are automatically updated.
@@ -96,6 +96,18 @@ To convert a bitstream file into ir-ctl timings for transmission, run:
 The IR frame can then be transmitted using ir-ctl with the generated timings file.
 
 `ir-ctl -d /dev/lirc0 --send=./ir_ctl_timings --carrier=38000` (at 38kHz carrier frequency)
+
+You can also run:
+
+```
+py scripts/control.py transmit \
+	--temp 25 \
+	--fan 2 \
+	--swing 3 \
+	--power on \
+```
+
+This will encode a new frame with the specified settings and immediately transmit it using ir-ctl. The script will create a temporary output timings file and delete it after transmission.
 
 ## Notes and limitations
 
