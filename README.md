@@ -68,13 +68,7 @@ Converts raw timing dumps into bits, applying a fixed threshold to distinguish 0
 By default, encoding uses the 24C_swing0_fan0 payload as the base. To create a new frame with specific settings, run:
 
 ```
-py scripts/control.py encode \
-	--temp 25 \
-	--fan 2 \
-	--swing 3 \
-	--power on \
-	--output ./bitstream_file \
-	--debug
+py scripts/control.py encode --temp 25 --fan 2 --swing 3 --power on --output ./bitstream_file --debug
 ```
 
 This creates a new frame with the specified temperature, fan, swing, and power settings, while preserving other bits from the base frame. The checksum and fixed tail bit are automatically updated.
@@ -88,9 +82,8 @@ If you are working with a specific mode (auto, eco, dehumidifying, fan, smartset
 #### Bitstream to ir-ctl timings
 To convert a bitstream file into ir-ctl timings for transmission, run:
 
-```py scripts/encode_irctl.py \
-	--input ./bitstream_file \
-	--output ./ir_ctl_timings
+```
+py scripts/encode_irctl.py --input ./bitstream_file --output ./ir_ctl_timings
 ```
 
 The IR frame can then be transmitted using ir-ctl with the generated timings file.
@@ -100,11 +93,7 @@ The IR frame can then be transmitted using ir-ctl with the generated timings fil
 You can also run:
 
 ```
-py scripts/control.py transmit \
-	--temp 25 \
-	--fan 2 \
-	--swing 3 \
-	--power on \
+py scripts/control.py transmit --temp 25 --fan 2 --swing 3
 ```
 
 This will encode a new frame with the specified settings and immediately transmit it using ir-ctl. The script will create a temporary output timings file and delete it after transmission.
